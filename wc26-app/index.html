@@ -235,10 +235,60 @@ footer{
 .stcard .city{font-size:13px;color:var(--chalk-dim);margin-top:2px}
 .stcard .cap{font-family:'Oswald';font-weight:500;font-size:13px;color:var(--turf);margin-top:8px}
 
-@media (max-width:520px){
-  .groups-grid{grid-template-columns:1fr}
-  body{font-size:14px}
-  .fx{padding:10px}
+/* ── Mobile ──────────────────────────────────────── */
+@media (max-width:600px){
+  /* Prevent any horizontal overflow */
+  html,body{overflow-x:hidden;max-width:100vw}
+  main{padding:12px 10px 80px}
+
+  /* Header */
+  .head-inner{padding:10px 12px 0}
+  .wordmark{font-size:18px}
+  .stamp{font-size:10px}
+
+  /* Nav tabs — scroll horizontally, don't wrap */
+  nav{overflow-x:auto;scrollbar-width:none;flex-wrap:nowrap;padding:8px 10px 0;gap:2px}
+  nav::-webkit-scrollbar{display:none}
+  .tab{padding:7px 10px 10px;font-size:12px;white-space:nowrap}
+
+  /* Timezone row — scroll horizontally */
+  .tz-row{overflow-x:auto;scrollbar-width:none;flex-wrap:nowrap;padding:6px 10px 7px;gap:5px}
+  .tz-row::-webkit-scrollbar{display:none}
+  .tz-btn{font-size:10px;padding:3px 8px}
+  .tz-label{display:none}
+
+  /* Groups grid — single column */
+  .groups-grid{grid-template-columns:1fr;gap:10px}
+
+  /* Standings table — hide W/D/L on mobile, keep P/GD/Pts */
+  table th:nth-child(3),table td:nth-child(3),
+  table th:nth-child(4),table td:nth-child(4),
+  table th:nth-child(5),table td:nth-child(5){display:none}
+  table{font-size:12px}
+  th,td{padding:6px 3px}
+  th.tname{padding-left:10px}
+  td.tname{padding-left:10px}
+  td.pts{font-size:13px}
+
+  /* Owner badge — smaller on mobile */
+  .owner-tag{font-size:9px;padding:1px 5px;margin-left:4px}
+
+  /* Fixtures */
+  .fx{padding:8px 10px;gap:6px}
+  .fx .side span{font-size:13px}
+  .fx .score{font-size:16px}
+  .fx .ko{font-size:13px}
+  .fx .mid{min-width:60px}
+
+  /* Sweepstake */
+  .sw-grid{grid-template-columns:1fr}
+
+  /* Live */
+  .live-grid{grid-template-columns:1fr}
+  .lcard .bigscore{font-size:28px}
+
+  /* Stadiums */
+  .std-grid{grid-template-columns:1fr}
 }
 </style>
 </head>
