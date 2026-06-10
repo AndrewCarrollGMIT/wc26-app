@@ -1,0 +1,9 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "functions": {
+    "api/fixtures.js": {
+      "memory": 128,
+      "maxDuration": 10
+    }
+  }
+}
