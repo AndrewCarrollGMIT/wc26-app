@@ -131,7 +131,8 @@ select:focus-visible{outline:2px solid var(--turf)}
 .fx .side{display:flex;align-items:center;gap:8px;min-width:0}
 .fx .side.away{justify-content:flex-end;text-align:right}
 
-.fx .side span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
+.fx .side .tn{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500;flex:1 1 0;min-width:0}
+.fx .side .tc{display:none;font-weight:700;font-size:12px;letter-spacing:.05em;flex:0 0 auto}
 .fx .mid{text-align:center;min-width:80px}
 .fx .score{font-family:'Oswald';font-weight:700;font-size:19px;letter-spacing:.06em}
 .fx .ko{font-family:'Oswald';font-weight:500;font-size:15px;color:var(--chalk-dim)}
@@ -276,8 +277,9 @@ footer{
   .owner-tag{font-size:9px;padding:1px 5px;margin-left:4px}
 
   /* Fixtures */
-  .fx{padding:8px 10px;gap:6px}
-  .fx .side span{font-size:13px}
+  .fx{padding:8px 10px;gap:4px}
+  .fx .side .tn{display:none}
+  .fx .side .tc{display:inline}
   .fx .score{font-size:16px}
   .fx .ko{font-size:13px}
   .fx .mid{min-width:60px}
@@ -365,15 +367,17 @@ const DATA = {"teams":[{"id":1,"name":"Mexico","flag":"https://flagcdn.com/w80/m
 const teamById = Object.fromEntries(DATA.teams.map(t => [t.id, t]));
 
 /* Emoji flags: no img, no network, works on every device */
+/* -- Emoji flags: 2-letter ISO, 3-letter FIFA, GB subdivisions -- */
 function isoToEmoji(iso2) {
-  if (!iso2 || iso2 === 'TBD') return '\u{1F3F3}';
-  const s = iso2.toLowerCase();
-  // England and Scotland subdivision flags via Unicode tag sequences
-  if (s === 'gb-eng') return '\u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}';
-  if (s === 'gb-sct') return '\u{1F3F4}\u{E0067}\u{E0062}\u{E0073}\u{E0063}\u{E0074}\u{E007F}';
-  return [...iso2.toUpperCase()].map(c =>
-    String.fromCodePoint(0x1F1E6 + c.charCodeAt(0) - 65)
-  ).join('');
+  if (!iso2 || iso2 === 'TBD') return '🏳';
+  const s = iso2.toUpperCase();
+  const LOOKUP = {
+    'ENG':'🏴󠁧󠁢󠁥󠁮󠁧󠁿','SCO':'🏴󠁧󠁢󠁳󠁣󠁴󠁿','WAL':'🏴󠁧󠁢󠁷󠁬󠁳󠁿',
+    'GB-ENG':'🏴󠁧󠁢󠁥󠁮󠁧󠁿','GB-SCT':'🏴󠁧󠁢󠁳󠁣󠁴󠁿',
+  };
+  if (LOOKUP[s]) return LOOKUP[s];
+  if (s.length === 2) return [...s].map(c => String.fromCodePoint(0x1F1E6 + c.charCodeAt(0) - 65)).join('');
+  return '🏳';
 }
 const stadiumById = Object.fromEntries(DATA.stadia.map(s => [s.id, s]));
 
@@ -534,9 +538,9 @@ function renderFixtures() {
     const hBadge = hOwner ? `<span class="owner-tag" style="background:${hOwner.color}">${esc(hOwner.name)}</span>` : "";
     const aBadge = aOwner ? `<span class="owner-tag" style="background:${aOwner.color}">${esc(aOwner.name)}</span>` : "";
     row.innerHTML = `
-      <div class="side"><span class="flag-em">${isoToEmoji(home.iso2)}</span><span>${esc(home.name)}</span>${hBadge}</div>
+      <div class="side"><span class="flag-em">${isoToEmoji(home.iso2)}</span><span class="tn">${esc(home.name)}</span><span class="tc">${esc(home.code)}</span>${hBadge}</div>
       <div class="mid">${mid}</div>
-      <div class="side away">${aBadge}<span>${esc(away.name)}</span><span class="flag-em">${isoToEmoji(away.iso2)}</span></div>`;
+      <div class="side away">${aBadge}<span class="tn">${esc(away.name)}</span><span class="tc">${esc(away.code)}</span><span class="flag-em">${isoToEmoji(away.iso2)}</span></div>`;
     if (stadium) {
       const v = el("div");
       v.style.cssText = "grid-column:1/-1;text-align:center;font-size:10px;color:var(--chalk-dim);letter-spacing:.04em;margin-top:-4px;padding-bottom:2px;text-transform:uppercase";
