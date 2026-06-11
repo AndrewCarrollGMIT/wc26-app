@@ -467,13 +467,14 @@ function fxStatus(m) {
   return 'upcoming';
 }
 function liveMinute(m) {
-  if (typeof m.elapsed === 'number') return m.elapsed + "\u2032";
-  const ko = new Date(m.date_iso);
-  const mins = Math.floor((Date.now() - ko)/60000);
-  if (mins < 0) return '';
-  if (mins <= 45) return mins + "\u2032";
-  if (mins <= 60) return 'HT';
-  return Math.min(mins - 15, 90) + "\u2032";
+  // Use API elapsed time if available; otherwise just show LIVE
+  // (worldcup26.ir doesn't send elapsed, so calculated minutes would be
+  // off whenever a match starts late)
+  if (typeof m.elapsed === 'number') {
+    return m.elapsed + "\u2032";
+  }
+  if (m.status === 'HT') return 'HT';
+  return 'LIVE';
 }
 
 /* ── Render groups ── */
