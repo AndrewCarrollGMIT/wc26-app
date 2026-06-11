@@ -677,6 +677,9 @@ const teamsByName = {};
 DATA.teams.forEach(t => { teamsByName[normaliseName(t.name)] = t; });
 
 function matchLocalGame(remote) {
+  // worldcup26.ir game IDs match our local data exactly — direct lookup
+  if (remote.gameId) return DATA.games.find(g => g.id === remote.gameId) || null;
+  // Fallback: name-based match for other sources
   const h = teamsByName[normaliseName(remote.home)];
   const a = teamsByName[normaliseName(remote.away)];
   if (!h || !a) return null;
@@ -702,7 +705,7 @@ function applyRemote(remote) {
     if (r.away_score != null) local.away_score = r.away_score;
     if (typeof r.elapsed === 'number') local.elapsed = r.elapsed;
     if (LIVE_STATUSES.has(r.status)) { local.status='live'; local.finished=false; }
-    else if (DONE_STATUSES.has(r.status)) { local.status='finished'; local.finished=true; }
+    else if (DONE_STATUSES.has(r.status) || r.finished) { local.status='finished'; local.finished=true; }
   }
   return changed;
 }
