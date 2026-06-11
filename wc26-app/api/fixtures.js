@@ -1,67 +1,69 @@
-// Serverless function: proxies football-data.org's WC 2026 match feed.
-// Keeps FOOTBALL_DATA_TOKEN server-side and shares one upstream call across all viewers via edge cache.
+// Proxies worldcup26.ir/get/games — free, no rate limit, live scores.
+// Game IDs and team IDs match our local data exactly (same source).
+// Optional: set WC26_TOKEN in Vercel env vars if the demo endpoint starts
+// requiring auth. If not set, tries without auth first.
 
 export default async function handler(req, res) {
-  const token = process.env.FOOTBALL_DATA_TOKEN;
+  const token = process.env.WC26_TOKEN || null;
 
-  if (!token) {
-    return res.status(500).json({
-      error: "FOOTBALL_DATA_TOKEN not set in Vercel environment variables"
-    });
-  }
+  const headers = { "Content-Type": "application/json" };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
 
   try {
-    const upstream = await fetch(
-      "https://api.football-data.org/v4/competitions/WC/matches",
-      {
-        headers: { "X-Auth-Token": token }
-      }
-    );
+    const upstream = await fetch("https://worldcup26.ir/get/games", { headers });
 
     if (!upstream.ok) {
       const body = await upstream.text();
       return res.status(upstream.status).json({
-        error: `football-data.org returned ${upstream.status}`,
-        detail: body.slice(0, 200)
+        error: `worldcup26.ir returned ${upstream.status}`,
+        detail: body.slice(0, 300)
       });
     }
 
     const data = await upstream.json();
+    const games = data.data || data || [];
 
-    // Map football-data.org's match shape to what the frontend expects.
-    // Status mapping:
-    //   SCHEDULED / TIMED → "NS"   (not started)
-    //   IN_PLAY           → "LIVE"
-    //   PAUSED            → "HT"
-    //   FINISHED          → "FT"
-    //   POSTPONED/SUSPENDED/CANCELLED → "PST"
+    // Map time_elapsed values to status codes the frontend understands
     const mapStatus = s => {
-      if (s === "IN_PLAY") return "LIVE";
-      if (s === "PAUSED") return "HT";
-      if (s === "FINISHED") return "FT";
-      if (s === "SCHEDULED" || s === "TIMED") return "NS";
-      return "PST";
+      if (!s) return "NS";
+      s = String(s).toLowerCase();
+      if (s === "notstarted" || s === "not_started") return "NS";
+      if (s === "1h")          return "1H";
+      if (s === "ht")          return "HT";
+      if (s === "2h")          return "2H";
+      if (s === "et")          return "ET";
+      if (s === "pen")         return "P";
+      if (s === "ft" || s === "finished") return "FT";
+      if (s === "live")        return "1H";   // generic live fallback
+      return "NS";
     };
 
-    const fixtures = (data.matches || []).map(m => ({
-      home: m.homeTeam?.name,
-      away: m.awayTeam?.name,
-      home_score: m.score?.fullTime?.home ?? null,
-      away_score: m.score?.fullTime?.away ?? null,
-      status: mapStatus(m.status),
-      elapsed: m.minute,
-      kickoff: m.utcDate,
-      round: m.group || m.stage || `Matchday ${m.matchday ?? "?"}`
-    }));
+    // Game IDs and team IDs from worldcup26.ir match our local data exactly.
+    // Frontend matches by game id directly — no fuzzy name lookup needed.
+    const fixtures = games
+      .filter(g => g.type === "group" || !g.type)  // group stage only
+      .map(g => ({
+        gameId:     parseInt(g.id),
+        home:       g.home_team?.name_en || null,
+        away:       g.away_team?.name_en || null,
+        home_score: g.home_score != null ? parseInt(g.home_score) : null,
+        away_score: g.away_score != null ? parseInt(g.away_score) : null,
+        status:     mapStatus(g.time_elapsed),
+        elapsed:    g.elapsed_time ? parseInt(g.elapsed_time) : null,
+        kickoff:    g.date || null,
+        round:      g.group ? `GROUP_${g.group}` : null,
+        finished:   g.finished === true || g.finished === "true"
+      }));
 
-    // Edge-cache for 60s. Six mates polling = still one upstream call per minute.
-    // 60 calls/hour during live windows, well under the 10/min free-tier ceiling.
+    // Cache 60s at the edge — all viewers share one upstream call per minute
     res.setHeader("Cache-Control", "s-maxage=60, stale-while-revalidate=300");
     res.status(200).json({
       fixtures,
       updated: new Date().toISOString(),
-      count: fixtures.length
+      source:  "worldcup26.ir",
+      count:   fixtures.length
     });
+
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
