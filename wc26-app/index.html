@@ -657,7 +657,7 @@ renderSweepstake();
    ════════════════════════════════════════════════════════════════ */
 
 /* ── Score cache: persists last known scores across page refreshes ── */
-const CACHE_KEY = 'wc26_scores_v1';
+const CACHE_KEY = 'wc26_scores_v2';
 
 function saveScores() {
   const scores = {};
@@ -698,17 +698,15 @@ const POLL_IDLE_MS = 10 * 60_000;
 const MATCH_WINDOW_MS = 2.5 * 60 * 60 * 1000;
 
 const TEAM_ALIASES = {
-  "turkey":"türkiye","türkiye":"türkiye",
-  "congo dr":"dr congo","dr congo":"dr congo",
-  "czech republic":"czechia","czechia":"czechia",
+  "turkey":"turkiye",
+  "congo dr":"dr congo",
+  "czech republic":"czechia",
   "usa":"united states","united states of america":"united states",
-  "korea republic":"south korea","south korea":"south korea",
-  "ir iran":"iran","iran":"iran",
+  "korea republic":"south korea",
+  "ir iran":"iran",
   "bosnia-herzegovina":"bosnia and herzegovina",
-  "bosnia and herzegovina":"bosnia and herzegovina",
-  "ivory coast":"ivory coast","côte d'ivoire":"ivory coast",
-  "cape verde islands":"cape verde","cabo verde":"cape verde",
-  "curacao":"curaçao","curaçao":"curaçao"
+  "cote d'ivoire":"ivory coast",
+  "cape verde islands":"cape verde","cabo verde":"cape verde"
 };
 const normaliseName = n => { const k = String(n||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim(); return TEAM_ALIASES[k]||k; };
 const teamsByName = {};
