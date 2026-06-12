@@ -16,6 +16,9 @@ const ALIASES = {
   "ir iran": "iran"
 };
 
+// gameId -> [home, away] normalized names (worldcup26.ir stopped sending names)
+const GAME_TEAMS = {"1":["mexico","south africa"],"2":["south korea","czechia"],"3":["canada","bosnia and herzegovina"],"4":["united states","paraguay"],"5":["haiti","scotland"],"6":["australia","turkiye"],"7":["brazil","morocco"],"8":["qatar","switzerland"],"9":["ivory coast","ecuador"],"10":["germany","curacao"],"11":["netherlands","japan"],"12":["sweden","tunisia"],"13":["iran","new zealand"],"14":["spain","cape verde"],"15":["belgium","egypt"],"16":["saudi arabia","uruguay"],"17":["france","senegal"],"18":["iraq","norway"],"19":["argentina","algeria"],"20":["austria","jordan"],"21":["portugal","dr congo"],"22":["england","croatia"],"23":["uzbekistan","colombia"],"24":["ghana","panama"],"25":["mexico","south korea"],"26":["switzerland","bosnia and herzegovina"],"27":["canada","qatar"],"28":["czechia","south africa"],"29":["brazil","haiti"],"30":["scotland","morocco"],"31":["united states","australia"],"32":["turkiye","paraguay"],"33":["germany","ivory coast"],"34":["ecuador","curacao"],"35":["netherlands","sweden"],"36":["tunisia","japan"],"37":["belgium","iran"],"38":["new zealand","egypt"],"39":["spain","saudi arabia"],"40":["uruguay","cape verde"],"41":["france","iraq"],"42":["norway","senegal"],"43":["argentina","austria"],"44":["jordan","algeria"],"45":["portugal","uzbekistan"],"46":["panama","croatia"],"47":["colombia","dr congo"],"48":["england","ghana"],"49":["scotland","brazil"],"50":["morocco","haiti"],"51":["south africa","south korea"],"52":["czechia","mexico"],"53":["bosnia and herzegovina","canada"],"54":["qatar","switzerland"],"55":["curacao","ivory coast"],"56":["ecuador","germany"],"57":["paraguay","australia"],"58":["turkiye","united states"],"59":["japan","sweden"],"60":["tunisia","netherlands"],"61":["senegal","iraq"],"62":["norway","france"],"63":["egypt","iran"],"64":["new zealand","belgium"],"65":["cape verde","saudi arabia"],"66":["uruguay","spain"],"67":["panama","england"],"68":["croatia","ghana"],"69":["algeria","austria"],"70":["jordan","argentina"],"71":["colombia","portugal"],"72":["dr congo","uzbekistan"]};
+
 function norm(s) {
   // strip diacritics so Turkiye/Curacao match no matter how they're spelled
   let n = String(s || "")
@@ -73,6 +76,13 @@ async function fetchWc26() {
         kickoff: g.date || null,
         finished: g.finished === true || g.finished === "true"
       };
+    })
+    .map(function (g) {
+      if (!g.home && GAME_TEAMS[g.gameId]) {
+        g.home = GAME_TEAMS[g.gameId][0];
+        g.away = GAME_TEAMS[g.gameId][1];
+      }
+      return g;
     });
 }
 
@@ -122,6 +132,13 @@ async function fetchSdbSeason(key) {
     });
 }
 
+function fixtureNames(g) {
+  // Prefer names from the feed; fall back to embedded lookup by gameId
+  if (g.home && g.away) return [norm(g.home), norm(g.away)];
+  const t = GAME_TEAMS[g.gameId];
+  return t ? t : [null, null];
+}
+
 function overlayLive(fixtures, live) {
   const liveMap = {};
   for (let i = 0; i < live.length; i++) {
@@ -130,7 +147,9 @@ function overlayLive(fixtures, live) {
   for (let i = 0; i < fixtures.length; i++) {
     const g = fixtures[i];
     if (g.finished) continue;
-    const lv = liveMap[norm(g.home) + "|" + norm(g.away)];
+    const names = fixtureNames(g);
+    if (!names[0]) continue;
+    const lv = liveMap[names[0] + "|" + names[1]];
     if (!lv) continue;
     if (lv.home_score != null) g.home_score = lv.home_score;
     if (lv.away_score != null) g.away_score = lv.away_score;
