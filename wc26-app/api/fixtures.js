@@ -140,6 +140,27 @@ function overlayLive(fixtures, live) {
   }
 }
 
+function scoredButNotStarted(fixtures) {
+  // TheSportsDB sometimes leaves a finished game marked "NS" while still
+  // carrying its final score. If there's a real score and kickoff is well
+  // in the past, treat it as finished so the app will display it.
+  const now = Date.now();
+  for (let i = 0; i < fixtures.length; i++) {
+    const g = fixtures[i];
+    if (g.finished) continue;
+    if (g.status !== "NS") continue;
+    const hasScore = (g.home_score != null && g.away_score != null) &&
+                     (g.home_score > 0 || g.away_score > 0);
+    if (!hasScore) continue;
+    let past = true;
+    if (g.kickoff) {
+      const ko = new Date(g.kickoff).getTime();
+      if (!isNaN(ko)) past = (now - ko) > 110 * 60000; // 110+ min since KO
+    }
+    if (past) { g.status = "FT"; g.finished = true; }
+  }
+}
+
 function timeBasedFT(fixtures) {
   // If a game is deep in the second half and kicked off 108+ min ago,
   // the final whistle has gone even if the feed lags.
@@ -171,6 +192,7 @@ module.exports = async function handler(req, res) {
         const live = await liveP;
         overlayLive(season, live);
         timeBasedFT(season);
+        scoredButNotStarted(season);
         res.setHeader("Cache-Control", "s-maxage=60, stale-while-revalidate=300");
         return res.status(200).json({
           fixtures: season,
@@ -186,6 +208,7 @@ module.exports = async function handler(req, res) {
     // FALLBACK: worldcup26.ir
     const wc26 = await fetchWc26();
     timeBasedFT(wc26);
+    scoredButNotStarted(wc26);
     res.setHeader("Cache-Control", "s-maxage=60, stale-while-revalidate=300");
     return res.status(200).json({
       fixtures: wc26,
