@@ -162,8 +162,11 @@ function scoredButNotStarted(fixtures) {
 }
 
 function timeBasedFT(fixtures) {
-  // If a game is deep in the second half and kicked off 108+ min ago,
-  // the final whistle has gone even if the feed lags.
+  // Safety net for when the feed LAGS at full time. A real match runs:
+  // 45 + ~15 half-time + 45 + stoppage, so it is not safely over until
+  // ~135 wall-clock minutes after kickoff. We also require the live feed
+  // to have gone quiet (no elapsed minute) - if it is still actively
+  // ticking, the match is still being played, so we never override it.
   const now = Date.now();
   for (let i = 0; i < fixtures.length; i++) {
     const g = fixtures[i];
@@ -171,8 +174,8 @@ function timeBasedFT(fixtures) {
     const ko = new Date(g.kickoff).getTime();
     if (isNaN(ko)) continue;
     const mins = (now - ko) / 60000;
-    const lateInGame = (g.status === "2H" || g.status === "ET") && (g.elapsed || 0) >= 89;
-    if (lateInGame && mins >= 108) {
+    const feedStillTicking = typeof g.elapsed === "number" && g.elapsed > 0;
+    if (mins >= 135 && !feedStillTicking) {
       g.status = "FT";
       g.finished = true;
     }
