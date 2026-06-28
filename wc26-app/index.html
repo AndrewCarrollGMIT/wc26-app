@@ -391,9 +391,7 @@ footer{
     <button class="tab" role="tab" aria-selected="true" data-view="groups">Groups</button>
     <button class="tab" role="tab" aria-selected="false" data-view="fixtures">Fixtures</button>
     <button class="tab" role="tab" aria-selected="false" data-view="live">Live<span class="badge" id="liveBadge" style="display:none">0</span></button>
-    <button class="tab" role="tab" aria-selected="false" data-view="stadia">Stadiums</button>
-    <button class="tab" role="tab" aria-selected="false" data-view="sweepstake">Sweepstake</button>
-    <button class="tab" role="tab" aria-selected="false" data-view="bracket">Bracket</button>
+    <button class="tab" role="tab" aria-selected="false" data-view="bracket">Knockouts</button>
   </nav>
   <div class="tz-row">
     <span class="tz-label">Time</span>
@@ -434,13 +432,7 @@ footer{
     <div class="live-grid" id="liveGrid"></div>
   </section>
 
-  <section class="view" id="view-sweepstake">
-    <div class="sw-grid" id="swGrid"></div>
-  </section>
 
-  <section class="view" id="view-stadia">
-    <div class="std-grid" id="stadiaGrid"></div>
-  </section>
 
   <section class="view" id="view-bracket"></section>
 </main>
@@ -524,6 +516,7 @@ function computeStandings() {
     groups[g] = DATA.groups[g].map(init);
   }
   for (const m of DATA.games) {
+    if (m.ko) continue;
     if (!m.finished) continue;
     const grp = groups[m.group];
     const h = grp.find(r => r.team.id === m.home);
@@ -618,7 +611,7 @@ function renderFixtures() {
     const stadium = stadiumById[m.stadium_id];
     const row = el("div","fx" + (st === "live" ? " live" : ""));
     const mid = st === "upcoming"
-      ? `<span class="ko num">${fmtTime.format(d)}</span><span class="status">Group ${esc(m.group)} \u00b7 MD${m.matchday}</span>`
+      ? `<span class="ko num">${fmtTime.format(d)}</span><span class="status">${m.ko ? esc(KO_LABEL[m.round]||"Knockout") : "Group "+esc(m.group)+" \u00b7 MD"+m.matchday}</span>`
       : `<span class="score num">${m.home_score}\u2013${m.away_score}</span><span class="status">${st === "live" ? esc(liveMinute(m)) : "Full time"}</span>`;
     const hOwner = teamOwner[m.home];
     const aOwner = teamOwner[m.away];
@@ -660,14 +653,14 @@ function renderLive() {
         <div class="bigscore num">${m.home_score}\u2013${m.away_score}</div>
         <div class="t"><span class="flag-em lg">${isoToEmoji(away.iso2)}</span><span>${esc(away.name)}</span></div>
       </div>
-      <div class="gname">Group ${esc(m.group)} \u00b7 Matchday ${m.matchday}</div>`;
+      <div class="gname">${m.ko ? esc(KO_LABEL[m.round]||"Knockout") : "Group "+esc(m.group)+" \u00b7 Matchday "+m.matchday}</div>`;
     grid.append(c);
   });
 }
 
 /* ── Render stadia ── */
 function renderStadia() {
-  const grid = $("#stadiaGrid"); grid.innerHTML = "";
+  const grid = $("#stadiaGrid"); if(!grid) return; grid.innerHTML = "";
   const counts = {};
   DATA.games.forEach(m => { counts[m.stadium_id] = (counts[m.stadium_id]||0) + 1; });
   DATA.stadia.sort((a,b) => b.capacity - a.capacity).forEach(s => {
@@ -701,7 +694,7 @@ function computePlayerPoints() {
 }
 
 function renderSweepstake() {
-  const grid = $("#swGrid"); grid.innerHTML = "";
+  const grid = $("#swGrid"); if(!grid) return; grid.innerHTML = "";
   computePlayerPoints().forEach((p, i) => {
     const card = el("div","sw-card");
     card.innerHTML = `
@@ -779,207 +772,197 @@ function restoreScores() {
 
 
 /* ═══════════════════════════════════════════════════════════
-   KNOCKOUT BRACKET  (self-contained; reads /api/fixtures feed)
-   Keeps its own state separate from group-stage DATA.
+   KNOCKOUTS — syncs knockout fixtures from the live feed into
+   DATA.games (so Live & Fixtures show them) AND renders the bracket.
    ═══════════════════════════════════════════════════════════ */
-let lastFeedFixtures = [];
-const KO = {
-  // round key -> {label, count, order}
-  rounds: [
-    { key:"R32",   label:"Round of 32",   short:"R32", size:16 },
-    { key:"R16",   label:"Round of 16",   short:"R16", size:8 },
-    { key:"QF",    label:"Quarter-finals",short:"QF",  size:4 },
-    { key:"SF",    label:"Semi-finals",   short:"SF",  size:2 },
-    { key:"F",     label:"Final",         short:"Final", size:1 },
-  ],
-  ties: {},          // key -> array of tie objects
-  activeRound: "R32",
-  champion: null,
-};
+const KO_ROUNDS = [
+  { key:"R32", label:"Round of 32",    short:"R32"   },
+  { key:"R16", label:"Round of 16",    short:"R16"   },
+  { key:"QF",  label:"Quarter-finals", short:"QF"    },
+  { key:"SF",  label:"Semi-finals",    short:"SF"    },
+  { key:"F",   label:"Final",          short:"Final" },
+];
+const KO_LABEL = Object.fromEntries(KO_ROUNDS.map(r=>[r.key, r.label]));
+let koActiveRound = "R32";
 
-// Group-stage matchups (home|away normalised) so we can exclude them from KO detection
-const KO_GROUP_PAIRS = new Set(
+// group-stage pairs so we never mistake a group game for a knockout
+const GROUP_PAIRS = new Set(
   DATA.games.map(g => {
-    const h = teamById[g.home], a = teamById[g.away];
-    return normaliseName(h.name) + "|" + normaliseName(a.name);
+    const h=teamById[g.home], a=teamById[g.away];
+    return normaliseName(h.name)+"|"+normaliseName(a.name);
   })
 );
 
-// Map a knockout fixture's kickoff date to its round.
-// WC26 knockout schedule windows (UTC):
-//   R32: Jun 28 - Jul 4 | R16: Jul 4 - Jul 7 | QF: Jul 9 - Jul 12 | SF: Jul 14-15 | Final: Jul 19
 function koRoundForDate(iso){
   if(!iso) return null;
-  const t = new Date(iso).getTime();
-  const d = (m,day,h=0)=>Date.UTC(2026,m,day,h);
-  if(t < d(6,4))        return "R32";   // up to Jul 4
-  if(t < d(6,8))        return "R16";   // Jul 4-7
-  if(t < d(6,13))       return "QF";    // Jul 9-12
-  if(t < d(6,17))       return "SF";    // Jul 14-15
-  return "F";                            // Jul 18-19
+  const t=new Date(iso).getTime();
+  const d=(m,day)=>Date.UTC(2026,m,day);
+  if(t < d(6,4))  return "R32";
+  if(t < d(6,8))  return "R16";
+  if(t < d(6,13)) return "QF";
+  if(t < d(6,17)) return "SF";
+  return "F";
 }
 
-function koTeamLookup(name){
-  return teamsByName[normaliseName(name)] || null;
-}
+// negative synthetic IDs for knockout teams not needed — we reuse real team ids.
+// Sync feed knockout fixtures into DATA.games. Idempotent (keyed by pair+round).
+const koGameIndex = {};   // pairKey -> game object in DATA.games
+let koSynced = false;
 
-// Build KO.ties from the live feed fixtures
-function koIngest(fixtures){
-  const buckets = { R32:[], R16:[], QF:[], SF:[], F:[] };
+function syncKnockouts(fixtures){
   for(const r of fixtures){
     if(!r.home || !r.away) continue;
-    const pair = normaliseName(r.home) + "|" + normaliseName(r.away);
-    if(KO_GROUP_PAIRS.has(pair)) continue;          // it's a group game
+    const pair = normaliseName(r.home)+"|"+normaliseName(r.away);
+    if(GROUP_PAIRS.has(pair)) continue;       // group game, already in DATA
     const round = koRoundForDate(r.kickoff);
     if(!round) continue;
-    const ht = koTeamLookup(r.home), at = koTeamLookup(r.away);
-    const live = LIVE_STATUSES.has(r.status);
-    const done = DONE_STATUSES.has(r.status) || r.finished;
-    buckets[round].push({
-      home:r.home, away:r.away,
-      homeTeam:ht, awayTeam:at,
-      hs: r.home_score, as: r.away_score,
-      status:r.status, elapsed:r.elapsed,
-      kickoff:r.kickoff, live, done,
-      // penalties if present in feed (TheSportsDB sometimes appends)
-      hp: r.home_pens ?? null, ap: r.away_pens ?? null
-    });
-  }
-  // sort each round by kickoff
-  for(const k in buckets) buckets[k].sort((a,b)=> new Date(a.kickoff)-new Date(b.kickoff));
-  KO.ties = buckets;
+    const ht = teamsByName[normaliseName(r.home)];
+    const at = teamsByName[normaliseName(r.away)];
+    if(!ht || !at) continue;                  // can't place unknown team yet
 
-  // champion = winner of the final if done
-  const fin = buckets.F[0];
-  if(fin && fin.done && fin.homeTeam && fin.awayTeam){
-    let w = null;
-    if(fin.hs > fin.as) w = fin.homeTeam;
-    else if(fin.as > fin.hs) w = fin.awayTeam;
-    else if(fin.hp!=null && fin.ap!=null) w = fin.hp>fin.ap ? fin.homeTeam : fin.awayTeam;
-    KO.champion = w;
-  } else KO.champion = null;
+    let g = koGameIndex[pair];
+    if(!g){
+      g = {
+        id: 10000 + Object.keys(koGameIndex).length,
+        home: ht.id, away: at.id,
+        home_score: 0, away_score: 0,
+        group: null, round: round, ko: true,
+        matchday: 0,
+        date_iso: r.kickoff || new Date().toISOString(),
+        local_date: "", stadium_id: null,
+        finished: false, status: "notstarted"
+      };
+      koGameIndex[pair] = g;
+      DATA.games.push(g);
+    }
+    // update score/status from feed
+    g.round = round;
+    if(r.kickoff) g.date_iso = r.kickoff;
+    if(r.home_score != null) g.home_score = r.home_score;
+    if(r.away_score != null) g.away_score = r.away_score;
+    if(typeof r.elapsed === 'number') g.elapsed = r.elapsed;
+    if(LIVE_STATUSES.has(r.status)){ g.status='live'; g.finished=false; }
+    else if(DONE_STATUSES.has(r.status) || r.finished){ g.status='finished'; g.finished=true; }
+    else { if(!g.finished){ g.status='notstarted'; } }
+  }
+  koSynced = true;
 }
 
-function koOwnerBadge(team){
-  if(!team) return "";
-  const o = (typeof teamOwner!=="undefined") ? teamOwner[team.id] : null;
+function koWinSide(g){
+  if(!g.finished) return 0;
+  if(g.home_score > g.away_score) return 1;
+  if(g.away_score > g.home_score) return 2;
+  if(g.home_pens!=null && g.away_pens!=null) return g.home_pens>g.away_pens?1:2;
+  return 0;
+}
+
+function koOwnerBadge(teamId){
+  const o = (typeof teamOwner!=="undefined") ? teamOwner[teamId] : null;
   if(!o) return "";
   return `<span class="tie-owner" style="background:${o.color}">${esc(o.name)}</span>`;
 }
 
-function koWinSide(t){
-  if(!t.done) return 0;
-  if(t.hs > t.as) return 1;
-  if(t.as > t.hs) return 2;
-  if(t.hp!=null && t.ap!=null) return t.hp>t.ap ? 1 : 2;
-  return 0;
-}
-
-function koTieHTML(t, isFinal){
-  const win = koWinSide(t);
-  const scoreCell = (s, pens) => {
-    if(t.status==="NS" || s==null) return `<span class="tie-score">–</span>`;
-    let html = `<span class="tie-score">${s}`;
-    if(pens!=null) html += `<span class="pens"> (${pens})</span>`;
-    html += `</span>`;
-    return html;
+function koTieHTML(g, isFinal){
+  const home=teamById[g.home], away=teamById[g.away];
+  const win=koWinSide(g);
+  const st = fxStatus(g);
+  const scoreCell = (s,side)=>{
+    if(st==="upcoming") return `<span class="tie-score">–</span>`;
+    return `<span class="tie-score">${s??0}</span>`;
   };
-  const teamRow = (team, name, score, pens, side) => {
-    const cls = win===0 ? "" : (win===side ? "win" : "lose");
-    const flag = team ? isoToEmoji(team.iso2) : "🏳";
-    const nm = team ? esc(team.name) : esc(name||"TBD");
+  const row=(team,score,side)=>{
+    const cls = win===0?"":(win===side?"win":"lose");
     return `<div class="tie-row ${cls}">
       <div class="tie-team">
-        <span class="tie-flag">${flag}</span>
-        <span class="tie-name">${nm}</span>
-        ${koOwnerBadge(team)}
-      </div>
-      ${scoreCell(score, pens)}
-    </div>`;
+        <span class="tie-flag">${isoToEmoji(team.iso2)}</span>
+        <span class="tie-name">${esc(team.name)}</span>
+        ${koOwnerBadge(team.id)}
+      </div>${scoreCell(score,side)}</div>`;
   };
-  let metaHTML = "";
-  if(t.live){
-    const mins = (typeof t.elapsed==="number" && t.elapsed>0) ? t.elapsed+"'" : "LIVE";
-    metaHTML = `<div class="tie-meta"><span class="live-tag"><span class="pulse-dot"></span>${esc(mins)}</span><span></span></div>`;
-  } else if(t.done){
-    metaHTML = `<div class="tie-meta"><span>Full time</span><span></span></div>`;
+  let meta="";
+  if(st==="live"){
+    const mins = (typeof g.elapsed==="number"&&g.elapsed>0)?g.elapsed+"'":"LIVE";
+    meta=`<div class="tie-meta"><span class="live-tag"><span class="pulse-dot"></span>${esc(mins)}</span><span></span></div>`;
+  } else if(st==="finished"){
+    meta=`<div class="tie-meta"><span>Full time</span><span></span></div>`;
   } else {
-    const d = new Date(t.kickoff);
-    const day = fmtDay.format(d), tm = fmtTime.format(d);
-    metaHTML = `<div class="tie-meta"><span>${esc(day)}</span><span>${esc(tm)}</span></div>`;
+    const d=new Date(g.date_iso);
+    meta=`<div class="tie-meta"><span>${esc(fmtDay.format(d))}</span><span>${esc(fmtTime.format(d))}</span></div>`;
   }
-  const tbdCls = (!t.homeTeam || !t.awayTeam) ? " tie-tbd" : "";
-  return `<div class="tie${t.live?" is-live":""}${isFinal?" is-final":""}${tbdCls}">
-    ${teamRow(t.homeTeam, t.home, t.hs, t.hp, 1)}
-    ${teamRow(t.awayTeam, t.away, t.as, t.ap, 2)}
-    ${metaHTML}
-  </div>`;
+  return `<div class="tie${st==="live"?" is-live":""}${isFinal?" is-final":""}">
+    ${row(home,g.home_score,1)}
+    ${row(away,g.away_score,2)}
+    ${meta}</div>`;
+}
+
+function koByRound(){
+  const buckets={R32:[],R16:[],QF:[],SF:[],F:[]};
+  DATA.games.forEach(g=>{ if(g.ko && g.round && buckets[g.round]) buckets[g.round].push(g); });
+  for(const k in buckets) buckets[k].sort((a,b)=>new Date(a.date_iso)-new Date(b.date_iso));
+  return buckets;
+}
+
+function koChampion(buckets){
+  const fin=buckets.F[0];
+  if(fin && fin.finished){
+    const w=koWinSide(fin);
+    if(w===1) return teamById[fin.home];
+    if(w===2) return teamById[fin.away];
+  }
+  return null;
 }
 
 function renderBracket(){
-  const root = $("#view-bracket");
-  if(!root) return;
-
-  const totalTies = Object.values(KO.ties).reduce((n,a)=>n+a.length,0);
-  if(totalTies===0){
-    root.innerHTML = `<div class="ko-empty"><div class="ic">🏆</div>
-      <div>The knockout bracket will appear here once the Round of 32 is confirmed.</div></div>`;
+  const root=$("#view-bracket"); if(!root) return;
+  const buckets=koByRound();
+  const total=Object.values(buckets).reduce((n,a)=>n+a.length,0);
+  if(total===0){
+    root.innerHTML=`<div class="ko-empty"><div class="ic">🏆</div>
+      <div>The knockout bracket appears here once the Round of 32 is set.</div></div>`;
     return;
   }
-
-  // champion banner
-  const champHTML = KO.champion
-    ? `<div class="ko-champ"><span class="trophy">🏆</span>
-        <div><div class="lbl">World Champions</div>
-        <div class="who">${isoToEmoji(KO.champion.iso2)} ${esc(KO.champion.name)}</div></div></div>`
-    : "";
-
-  // round selector (mobile)
-  const roundBtns = KO.rounds
-    .filter(r => KO.ties[r.key] && KO.ties[r.key].length)
-    .map(r => `<button class="ko-round-btn${r.key===KO.activeRound?" active":""}" data-round="${r.key}">${esc(r.short)}</button>`)
-    .join("");
-
-  // desktop tree
-  const treeCols = KO.rounds.map(r => {
-    const ties = KO.ties[r.key]||[];
-    if(!ties.length && r.key!=="R32") return "";
-    const isFinal = r.key==="F";
-    const inner = ties.length
-      ? ties.map(t => `<div class="tie-slot">${koTieHTML(t, isFinal)}</div>`).join("")
-      : `<div class="tie-slot"><div class="tie tie-tbd"><div class="tie-row"><div class="tie-team"><span class="tie-name">TBD</span></div></div></div></div>`;
-    return `<div class="ko-col${isFinal?" final-col":""}">
-      <div class="ko-col-hdr">${esc(r.label)}</div>${inner}</div>`;
+  const champ=koChampion(buckets);
+  const champHTML = champ
+    ? `<div class="ko-champ"><span class="trophy">🏆</span><div>
+        <div class="lbl">World Champions</div>
+        <div class="who">${isoToEmoji(champ.iso2)} ${esc(champ.name)}</div></div></div>` : "";
+  const roundBtns = KO_ROUNDS.filter(r=>buckets[r.key].length)
+    .map(r=>`<button class="ko-round-btn${r.key===koActiveRound?" active":""}" data-round="${r.key}">${esc(r.short)}</button>`).join("");
+  const treeCols = KO_ROUNDS.map(r=>{
+    const ts=buckets[r.key];
+    if(!ts.length && r.key!=="R32") return "";
+    const isFinal=r.key==="F";
+    const inner = ts.length
+      ? ts.map(g=>`<div class="tie-slot">${koTieHTML(g,isFinal)}</div>`).join("")
+      : `<div class="tie-slot"><div class="tie tie-tbd"><div class="tie-row"><div class="tie-team"><span class="tie-name">To be decided</span></div></div></div></div>`;
+    return `<div class="ko-col${isFinal?" final-col":""}"><div class="ko-col-hdr">${esc(r.label)}</div>${inner}</div>`;
   }).join("");
-
-  // mobile list for active round
-  const activeTies = KO.ties[KO.activeRound]||[];
+  if(!buckets[koActiveRound] || !buckets[koActiveRound].length){
+    const firstWith = KO_ROUNDS.find(r=>buckets[r.key].length);
+    if(firstWith) koActiveRound=firstWith.key;
+  }
+  const activeTies=buckets[koActiveRound]||[];
   const listHTML = activeTies.length
-    ? activeTies.map(t => koTieHTML(t, KO.activeRound==="F")).join("")
+    ? activeTies.map(g=>koTieHTML(g,koActiveRound==="F")).join("")
     : `<div class="ko-empty">Not yet decided.</div>`;
-
-  root.innerHTML = `
+  root.innerHTML=`
     <div class="ko-intro">
-      <div><div class="ko-title">Knockout Bracket</div>
+      <div><div class="ko-title">Road to the Final</div>
         <div class="ko-sub">Round of 32 to the Final</div></div>
       ${champHTML}
     </div>
     <div class="ko-rounds">${roundBtns}</div>
     <div class="ko-list">${listHTML}</div>
-    <div class="ko-tree-wrap"><div class="ko-tree">${treeCols}</div></div>
-  `;
-
-  // wire round buttons
+    <div class="ko-tree-wrap"><div class="ko-tree">${treeCols}</div></div>`;
   root.querySelectorAll(".ko-round-btn").forEach(b=>{
-    b.addEventListener("click",()=>{ KO.activeRound=b.dataset.round; renderBracket(); });
+    b.addEventListener("click",()=>{ koActiveRound=b.dataset.round; renderBracket(); });
   });
 }
 
 
 // Restore cached scores immediately on load, then re-render
 restoreScores();
-renderGroups(); renderFixtures(); renderLive(); renderSweepstake();
-koIngest(lastFeedFixtures); renderBracket();
+renderGroups(); renderFixtures(); renderLive(); renderSweepstake(); renderBracket();
 
 const POLL_LIVE_MS = 60_000;
 const POLL_IDLE_MS = 10 * 60_000;
@@ -1047,13 +1030,10 @@ async function pollFixtures() {
     const r = await fetch('/api/fixtures', { cache:'no-store' });
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const j = await r.json();
-    lastFeedFixtures = j.fixtures || [];
-    const didChange = applyRemote(j);
-    if (didChange) {
-      saveScores();
-      renderGroups(); renderFixtures(); renderLive(); renderSweepstake();
-    }
-    koIngest(lastFeedFixtures); renderBracket();
+    syncKnockouts(j.fixtures || []);
+    const changed = applyRemote(j);
+    saveScores();
+    renderGroups(); renderFixtures(); renderLive(); renderSweepstake(); renderBracket();
     const activeTzBtn = document.querySelector(".tz-btn.active");
     const tzLabel = activeTzBtn ? activeTzBtn.dataset.label : "SYD";
     $("#stamp").textContent = "UPDATED " +
