@@ -388,9 +388,8 @@ footer{
     <div class="stamp" id="stamp">JUN 11 – JUL 19 · SYD TIME</div>
   </div>
   <nav role="tablist">
-    <button class="tab" role="tab" aria-selected="true" data-view="groups">Groups</button>
     <button class="tab" role="tab" aria-selected="false" data-view="fixtures">Fixtures</button>
-    <button class="tab" role="tab" aria-selected="false" data-view="live">Live<span class="badge" id="liveBadge" style="display:none">0</span></button>
+    <button class="tab" role="tab" aria-selected="true" data-view="live">Live<span class="badge" id="liveBadge" style="display:none">0</span></button>
     <button class="tab" role="tab" aria-selected="false" data-view="bracket">Knockouts</button>
   </nav>
   <div class="tz-row">
@@ -401,13 +400,6 @@ footer{
 </header>
 
 <main>
-  <section class="view on" id="view-groups">
-    <div class="legend">
-      <span class="key"><i class="g"></i> Top 2 — advance to Round of 32</span>
-      <span class="key"><i class="y"></i> 3rd place — 8 best advance</span>
-    </div>
-    <div class="groups-grid" id="groupsGrid"></div>
-  </section>
 
   <section class="view" id="view-fixtures">
     <div class="fx-controls">
@@ -428,7 +420,7 @@ footer{
     <div id="fxList"></div>
   </section>
 
-  <section class="view" id="view-live">
+  <section class="view on" id="view-live">
     <div class="live-grid" id="liveGrid"></div>
   </section>
 
@@ -770,6 +762,28 @@ function restoreScores() {
   } catch(e) {}
 }
 
+// Restore cached scores immediately on load, then re-render
+restoreScores();
+renderGroups(); renderFixtures(); renderLive(); renderSweepstake(); renderBracket();
+
+const POLL_LIVE_MS = 60_000;
+const POLL_IDLE_MS = 10 * 60_000;
+const MATCH_WINDOW_MS = 2.5 * 60 * 60 * 1000;
+
+const TEAM_ALIASES = {
+  "turkey":"turkiye",
+  "congo dr":"dr congo",
+  "czech republic":"czechia",
+  "usa":"united states","united states of america":"united states",
+  "korea republic":"south korea",
+  "ir iran":"iran",
+  "bosnia-herzegovina":"bosnia and herzegovina",
+  "cote d'ivoire":"ivory coast",
+  "cape verde islands":"cape verde","cabo verde":"cape verde"
+};
+const normaliseName = n => { const k = String(n||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim(); return TEAM_ALIASES[k]||k; };
+const teamsByName = {};
+DATA.teams.forEach(t => { teamsByName[normaliseName(t.name)] = t; });
 
 /* ═══════════════════════════════════════════════════════════
    KNOCKOUTS — syncs knockout fixtures from the live feed into
@@ -960,29 +974,6 @@ function renderBracket(){
 }
 
 
-// Restore cached scores immediately on load, then re-render
-restoreScores();
-renderGroups(); renderFixtures(); renderLive(); renderSweepstake(); renderBracket();
-
-const POLL_LIVE_MS = 60_000;
-const POLL_IDLE_MS = 10 * 60_000;
-const MATCH_WINDOW_MS = 2.5 * 60 * 60 * 1000;
-
-const TEAM_ALIASES = {
-  "turkey":"turkiye",
-  "congo dr":"dr congo",
-  "czech republic":"czechia",
-  "usa":"united states","united states of america":"united states",
-  "korea republic":"south korea",
-  "ir iran":"iran",
-  "bosnia-herzegovina":"bosnia and herzegovina",
-  "cote d'ivoire":"ivory coast",
-  "cape verde islands":"cape verde","cabo verde":"cape verde"
-};
-const normaliseName = n => { const k = String(n||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim(); return TEAM_ALIASES[k]||k; };
-const teamsByName = {};
-DATA.teams.forEach(t => { teamsByName[normaliseName(t.name)] = t; });
-
 function matchLocalGame(remote) {
   // Match by team names only - external feed IDs no longer align with rebuilt schedule
   const h = teamsByName[normaliseName(remote.home)];
@@ -1031,7 +1022,7 @@ async function pollFixtures() {
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const j = await r.json();
     syncKnockouts(j.fixtures || []);
-    const changed = applyRemote(j);
+    applyRemote(j);
     saveScores();
     renderGroups(); renderFixtures(); renderLive(); renderSweepstake(); renderBracket();
     const activeTzBtn = document.querySelector(".tz-btn.active");
