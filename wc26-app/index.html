@@ -385,7 +385,7 @@ footer{
 <header>
   <div class="head-inner">
     <div class="wordmark">WORLD CUP <span class="yr">26</span></div>
-    <div class="stamp" id="stamp">JUN 11 – JUL 19 · SYD TIME</div>
+    <div class="stamp" id="stamp">KO3 · JUN 11 – JUL 19 · SYD TIME</div>
   </div>
   <nav role="tablist">
     <button class="tab" role="tab" aria-selected="false" data-view="fixtures">Fixtures</button>
@@ -489,7 +489,7 @@ document.querySelectorAll(".tz-btn").forEach(btn => {
     const label = btn.dataset.label;
     const stamp = $("#stamp");
     if (!stamp.textContent.includes("UPDATED")) {
-      stamp.textContent = `JUN 11 – JUL 19 · ${label} TIME`;
+      stamp.textContent = `KO3 · JUN 11 – JUL 19 · ${label} TIME`;
     }
   });
 });
