@@ -402,6 +402,7 @@ footer{
 <main>
 
   <section class="view" id="view-fixtures">
+    <div id="dbgline" style="font-size:11px;color:#888;padding:4px 0;font-family:monospace"></div>
     <div class="fx-controls">
       <select id="fxGroup" aria-label="Filter by group"></select>
       <select id="fxMatchday" aria-label="Filter by matchday">
@@ -1019,6 +1020,7 @@ function anyMatchInLiveWindow() {
 console.log("WC26 build: KO-v2 ok");
 async function pollFixtures() {
   try {
+    const dbg = document.getElementById('dbgline');
     const r = await fetch('/api/fixtures', { cache:'no-store' });
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const j = await r.json();
@@ -1026,12 +1028,17 @@ async function pollFixtures() {
     applyRemote(j);
     saveScores();
     renderGroups(); renderFixtures(); renderLive(); renderSweepstake(); renderBracket();
+    if (dbg) { const koN = DATA.games.filter(g=>g.ko).length; dbg.textContent = 'OK · ' + (j.fixtures||[]).length + ' from feed · ' + DATA.games.length + ' total · ' + koN + ' knockout'; }
     const activeTzBtn = document.querySelector(".tz-btn.active");
     const tzLabel = activeTzBtn ? activeTzBtn.dataset.label : "SYD";
     $("#stamp").textContent = "UPDATED " +
       new Date().toLocaleTimeString('en-AU',{timeZone:TZ,hour:'2-digit',minute:'2-digit',hour12:false}) +
       " · " + tzLabel;
-  } catch(e) { console.warn('Live update failed:', e.message); }
+  } catch(e) {
+    console.warn('Live update failed:', e.message);
+    const dbg = document.getElementById('dbgline');
+    if (dbg) dbg.textContent = 'Update error: ' + e.message;
+  }
 }
 
 function scheduleNext() {
