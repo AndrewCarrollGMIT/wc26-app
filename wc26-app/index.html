@@ -465,6 +465,9 @@ const teamOwner = {};
 PLAYERS.forEach(p => p.teams.forEach(id => { teamOwner[id] = p; }));
 
 const $ = s => document.querySelector(s);
+// Safe render: one failing renderer never blocks the others
+function safeRender(fn, name){ try{ fn(); }catch(e){ console.warn("render "+name+" failed:", e.message); var d=document.getElementById("dbgline"); if(d) d.textContent="render "+name+" error: "+e.message; } }
+
 const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
@@ -551,6 +554,7 @@ function liveMinute(m) {
 
 /* ── Render groups ── */
 function renderGroups() {
+  if(!document.getElementById("groupsGrid")) return;
   const standings = computeStandings();
   const grid = $("#groupsGrid"); grid.innerHTML = "";
   for (const g of Object.keys(standings).sort()) {
@@ -653,6 +657,7 @@ function renderLive() {
 
 /* ── Render stadia ── */
 function renderStadia() {
+  if(!document.getElementById("stadiaGrid")) return;
   const grid = $("#stadiaGrid"); if(!grid) return; grid.innerHTML = "";
   const counts = {};
   DATA.games.forEach(m => { counts[m.stadium_id] = (counts[m.stadium_id]||0) + 1; });
@@ -687,6 +692,7 @@ function computePlayerPoints() {
 }
 
 function renderSweepstake() {
+  if(!document.getElementById("swGrid")) return;
   const grid = $("#swGrid"); if(!grid) return; grid.innerHTML = "";
   computePlayerPoints().forEach((p, i) => {
     const card = el("div","sw-card");
@@ -765,7 +771,7 @@ function restoreScores() {
 
 // Restore cached scores immediately on load, then re-render
 restoreScores();
-renderGroups(); renderFixtures(); renderLive(); renderSweepstake(); renderBracket();
+safeRender(renderGroups,'groups'); safeRender(renderFixtures,'fixtures'); safeRender(renderLive,'live'); safeRender(renderSweepstake,'sweep'); safeRender(renderBracket,'bracket');
 
 const POLL_LIVE_MS = 60_000;
 const POLL_IDLE_MS = 10 * 60_000;
@@ -1027,7 +1033,7 @@ async function pollFixtures() {
     syncKnockouts(j.fixtures || []);
     applyRemote(j);
     saveScores();
-    renderGroups(); renderFixtures(); renderLive(); renderSweepstake(); renderBracket();
+    safeRender(renderGroups,'groups'); safeRender(renderFixtures,'fixtures'); safeRender(renderLive,'live'); safeRender(renderSweepstake,'sweep'); safeRender(renderBracket,'bracket');
     if (dbg) { const koN = DATA.games.filter(g=>g.ko).length; dbg.textContent = 'OK · ' + (j.fixtures||[]).length + ' from feed · ' + DATA.games.length + ' total · ' + koN + ' knockout'; }
     const activeTzBtn = document.querySelector(".tz-btn.active");
     const tzLabel = activeTzBtn ? activeTzBtn.dataset.label : "SYD";
